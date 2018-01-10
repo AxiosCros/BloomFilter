@@ -16,14 +16,6 @@
 ## 安装使用
 
 ```bash
-mkdir build
-cd build
-cmake ..
-make && make install
-```
-or 
-
-```bash
 make && make install
 ```
 
