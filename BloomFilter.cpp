@@ -149,6 +149,8 @@ PHPX_EXTENSION()
     //    cout << extension->name << "afterRequest" << endl;
     //};
 
+    extension->require("swoole");
+
     extension->info({"BloomFilter support", "enabled"},
                     {
                         {"author", "Tianfeng Han"},
