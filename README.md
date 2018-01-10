@@ -1,5 +1,5 @@
 # BloomFilter
-基于共享内存的 `BloomFilter` 库。
+基于共享内存的 `BloomFilter` 库。部分代码借鉴了<https://github.com/armon/bloomd> 项目。
 
 ## Require
 
