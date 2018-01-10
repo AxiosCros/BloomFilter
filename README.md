@@ -1,7 +1,7 @@
 # BloomFilter
 基于共享内存的 `BloomFilter` 库。
 
-* 部分代码借鉴了<https://github.com/armon/bloomd> 项目
+* 部分代码借鉴自 <https://github.com/armon/bloomd> 项目
 * 参考资料
   * <https://my.oschina.net/kiwivip/blog/133498>
   * <http://blog.csdn.net/jiaomeng/article/details/1495500>
@@ -9,9 +9,9 @@
 
 ## Require
 
-`SWOOLE`
-`PHP-X`
-`PHP >= 7.0`
+* `SWOOLE`
+* `PHP-X`
+* `PHP >= 7.0`
 
 ## 安装使用
 
