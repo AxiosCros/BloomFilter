@@ -5,8 +5,7 @@ extern "C"
 #include <php_swoole.h>
 #include <swoole.h>
 extern void MurmurHash3_x64_128(const void * key, const int len, const uint32_t seed, void *out);
-extern void SpookyHash128(const void *key, size_t len, uint64_t seed1, uint64_t seed2, uint64_t *hash1,
-        uint64_t *hash2);
+extern void SpookyHash128(const void *key, size_t len, uint64_t seed1, uint64_t seed2, uint64_t *hash1, uint64_t *hash2);
 }
 
 #include <iostream>
@@ -71,15 +70,26 @@ static PHPX_METHOD(BloomFilter, __construct)
     }
 
     BloomFilterObject *bf = (BloomFilterObject *) sw_shm_malloc(sizeof(BloomFilterObject) + capacity);
+    if (bf == NULL)
+    {
+        throwException("RuntimeException", "sw_shm_malloc() failed.");
+    }
     bf->capacity = capacity;
     bf->array = (char *) (bf + 1);
     bzero(bf->array, bf->capacity);
 
     bf->hashes = (uint64_t*) ecalloc(k_num, sizeof(uint64_t));
+    if (bf->hashes == NULL)
+    {
+        throwException("RuntimeException", "ecalloc() failed.");
+    }
     bf->bit_num = bf->capacity * 8;
     bf->k_num = k_num;
 
-    swRWLock_create(&bf->lock, 1);
+    if (swRWLock_create(&bf->lock, 1) < 0)
+    {
+        throwException("RuntimeException", "swRWLock_create() failed.");
+    }
 
     _this.oSet(PROPERTY_NAME, RESOURCE_NAME, bf);
 }
@@ -205,11 +215,11 @@ static PHPX_METHOD(BloomFilter, load)
 
 PHPX_EXTENSION()
 {
-    Extension *extension = new Extension("BloomFilter", "0.0.1");
+    Extension *extension = new Extension("BloomFilter", "1.0.1");
 
     extension->onStart = [extension]() noexcept
     {
-        extension->registerConstant("QUEUE_VERSION", 1001);
+        extension->registerConstant("BLOOMFILTER_VERSION", 10001);
 
         Class *c = new Class("BloomFilter");
         c->addMethod(PHPX_ME(BloomFilter, __construct), CONSTRUCT);
@@ -222,17 +232,6 @@ PHPX_EXTENSION()
         extension->registerClass(c);
         extension->registerResource(RESOURCE_NAME, BloomFilterResDtor);
     };
-
-    //extension->onShutdown = [extension]() noexcept {
-    //};
-
-    //extension->onBeforeRequest = [extension]() noexcept {
-    //    cout << extension->name << "beforeRequest" << endl;
-    //};
-
-    //extension->onAfterRequest = [extension]() noexcept {
-    //    cout << extension->name << "afterRequest" << endl;
-    //};
 
     extension->require("swoole");
 
