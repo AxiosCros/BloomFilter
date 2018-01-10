@@ -14,3 +14,5 @@ var_dump($b->has("rango"));
 var_dump($b->has("xxxxxxxxxxxxxxxxxxxxxxx"));
 var_dump($b->has("rango12"));
 var_dump($b->has("me"));
+
+$b->dump(__DIR__."/bf.data");

@@ -14,8 +14,6 @@ extern void SpookyHash128(const void *key, size_t len, uint64_t seed1, uint64_t 
 using namespace php;
 using namespace std;
 
-#define DEFAULT_QUEUE_SIZE 64
-
 struct BloomFilterObject
 {
     size_t capacity;
@@ -54,6 +52,7 @@ static void BloomFilterResDtor(zend_resource *res)
 {
     BloomFilterObject *bf = static_cast<BloomFilterObject *>(res->ptr);
     efree(bf->hashes);
+    bf->lock.free(&bf->lock);
     sw_shm_free(bf);
 }
 
@@ -111,7 +110,7 @@ PHPX_METHOD(BloomFilter, has)
     retval = true;
 }
 
-PHPX_METHOD(BloomFilter, add)
+static PHPX_METHOD(BloomFilter, add)
 {
     BloomFilterObject *bf = _this.oGet<BloomFilterObject>(PROPERTY_NAME, RESOURCE_NAME);
     auto key = args[0];
@@ -129,12 +128,79 @@ PHPX_METHOD(BloomFilter, add)
     bf->lock.unlock(&bf->lock);
 }
 
-PHPX_METHOD(BloomFilter, clear)
+static PHPX_METHOD(BloomFilter, clear)
 {
     BloomFilterObject *bf = _this.oGet<BloomFilterObject>(PROPERTY_NAME, RESOURCE_NAME);
     bf->lock.lock(&bf->lock);
     bzero(bf->array, bf->capacity);
     bf->lock.unlock(&bf->lock);
+}
+
+static PHPX_METHOD(BloomFilter, dump)
+{
+    BloomFilterObject *bf = _this.oGet<BloomFilterObject>(PROPERTY_NAME, RESOURCE_NAME);
+    auto file = args[0].toCString();
+
+    bf->lock.lock(&bf->lock);
+    int fd = open(file, O_CREAT | O_WRONLY, 0644);
+    if (fd < 0)
+    {
+        fail: bf->lock.unlock(&bf->lock);
+        retval = false;
+        if (fd >= 0)
+        {
+            close(fd);
+            unlink(file);
+        }
+        return;
+    }
+    if (swoole_sync_writefile(fd, &bf->capacity, sizeof(bf->capacity)) < 0)
+    {
+        goto fail;
+    }
+    if (swoole_sync_writefile(fd, bf->array, bf->capacity) < 0)
+    {
+        goto fail;
+    }
+    bf->lock.unlock(&bf->lock);
+    close(fd);
+    retval = true;
+}
+
+static PHPX_METHOD(BloomFilter, load)
+{
+    auto file = args[0].toCString();
+    int fd = open(file, O_RDONLY);
+    if (fd < 0)
+    {
+        fail: retval = false;
+        if (fd >= 0)
+        {
+            close(fd);
+        }
+        return;
+    }
+
+    size_t capacity;
+    if (swoole_sync_readfile(fd, &capacity, sizeof(capacity)) < 0)
+    {
+        goto fail;
+    }
+
+    long filesize = swoole_file_size(file);
+    if (filesize < 0 || filesize < capacity + sizeof(capacity))
+    {
+        goto fail;
+    }
+
+    auto o = newObject("BloomFilter", (long) capacity);
+    BloomFilterObject *bf = o.oGet<BloomFilterObject>(PROPERTY_NAME, RESOURCE_NAME);
+    if (swoole_sync_readfile(fd, bf->array, capacity) < 0)
+    {
+        goto fail;
+    }
+    close(fd);
+    retval = o;
 }
 
 PHPX_EXTENSION()
@@ -150,6 +216,8 @@ PHPX_EXTENSION()
         c->addMethod(PHPX_ME(BloomFilter, add));
         c->addMethod(PHPX_ME(BloomFilter, has));
         c->addMethod(PHPX_ME(BloomFilter, clear));
+        c->addMethod(PHPX_ME(BloomFilter, load), STATIC);
+        c->addMethod(PHPX_ME(BloomFilter, dump));
 
         extension->registerClass(c);
         extension->registerResource(RESOURCE_NAME, BloomFilterResDtor);
