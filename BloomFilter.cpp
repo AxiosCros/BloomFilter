@@ -3,6 +3,7 @@
 extern "C"
 {
 #include <php_swoole.h>
+#include <swoole.h>
 extern void MurmurHash3_x64_128(const void * key, const int len, const uint32_t seed, void *out);
 extern void SpookyHash128(const void *key, size_t len, uint64_t seed1, uint64_t seed2, uint64_t *hash1,
         uint64_t *hash2);
@@ -22,6 +23,7 @@ struct BloomFilterObject
     uint32_t k_num;
     uint64_t bit_num;
     uint64_t *hashes;
+    swLock lock;
 };
 
 #define RESOURCE_NAME  "BloomFilterResource"
@@ -78,6 +80,8 @@ static PHPX_METHOD(BloomFilter, __construct)
     bf->bit_num = bf->capacity * 8;
     bf->k_num = k_num;
 
+    swRWLock_create(&bf->lock, 1);
+
     _this.oSet(PROPERTY_NAME, RESOURCE_NAME, bf);
 }
 
@@ -91,17 +95,19 @@ PHPX_METHOD(BloomFilter, has)
     uint32_t n;
     bool miss;
 
+    bf->lock.lock_rd(&bf->lock);
     for (i = 0; i < bf->k_num; i++)
     {
         n = bf->hashes[i] % bf->bit_num;
         miss = !(bf->array[n / 8] & (1 << (n % 8)));
         if (miss)
         {
+            bf->lock.unlock(&bf->lock);
             retval = false;
             return;
         }
     }
-
+    bf->lock.unlock(&bf->lock);
     retval = true;
 }
 
@@ -114,11 +120,21 @@ PHPX_METHOD(BloomFilter, add)
     uint32_t i;
     uint32_t n;
 
+    bf->lock.lock(&bf->lock);
     for (i = 0; i < bf->k_num; i++)
     {
         n = bf->hashes[i] % bf->bit_num;
         bf->array[n / 8] |= (1 << (n % 8));
     }
+    bf->lock.unlock(&bf->lock);
+}
+
+PHPX_METHOD(BloomFilter, clear)
+{
+    BloomFilterObject *bf = _this.oGet<BloomFilterObject>(PROPERTY_NAME, RESOURCE_NAME);
+    bf->lock.lock(&bf->lock);
+    bzero(bf->array, bf->capacity);
+    bf->lock.unlock(&bf->lock);
 }
 
 PHPX_EXTENSION()
@@ -133,6 +149,7 @@ PHPX_EXTENSION()
         c->addMethod(PHPX_ME(BloomFilter, __construct), CONSTRUCT);
         c->addMethod(PHPX_ME(BloomFilter, add));
         c->addMethod(PHPX_ME(BloomFilter, has));
+        c->addMethod(PHPX_ME(BloomFilter, clear));
 
         extension->registerClass(c);
         extension->registerResource(RESOURCE_NAME, BloomFilterResDtor);
